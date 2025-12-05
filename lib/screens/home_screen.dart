@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_staggered_animations/flutter_staggered_animations.dart'; // Paket Animasi
+import 'package:flutter_staggered_animations/flutter_staggered_animations.dart'; 
 import '../providers/auth_provider.dart';
 import '../providers/journal_provider.dart';
 import '../utils/constants.dart';
@@ -73,7 +73,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // VAR DINAMIS (Tema)
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
@@ -82,25 +81,21 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Consumer<JournalProvider>(
         builder: (context, provider, child) {
-          return AnimationLimiter( // Pengontrol Animasi List
+          return AnimationLimiter(
             child: CustomScrollView(
               slivers: [
                 
-                // --- 1. STICKY HEADER (LOGO + SEARCH) ---
+                // --- 1. STICKY HEADER ---
                 SliverAppBar(
                   expandedHeight: 240.0, 
                   floating: false,
-                  pinned: true, // BIKIN NEMPEL SAAT SCROLL
+                  pinned: true, 
                   backgroundColor: theme.cardTheme.color,
                   elevation: 0,
                   scrolledUnderElevation: 0, 
-                  
-                  // Bentuk Lengkung Bawah
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
                   ),
-                  
-                  // LOGO & JUDUL
                   title: Row(
                     children: [
                       const AppLogo(size: 32, style: LogoStyle.soul, withText: false),
@@ -116,8 +111,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  
-                  // TOMBOL LOGOUT
                   actions: [
                     Padding(
                       padding: const EdgeInsets.only(right: 16.0),
@@ -132,8 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ],
-
-                  // BAGIAN SAPAAN (HILANG SAAT SCROLL)
                   flexibleSpace: FlexibleSpaceBar(
                     background: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -150,13 +141,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             "Apa ceritamu?", 
                             style: GoogleFonts.plusJakartaSans(fontSize: 26, fontWeight: FontWeight.bold, color: colorScheme.onSurface)
                           ),
-                          const SizedBox(height: 60), // Spacer buat search bar
+                          const SizedBox(height: 60), 
                         ],
                       ),
                     ),
                   ),
-
-                  // SEARCH BAR (MENEMPEL/STICKY)
                   bottom: PreferredSize(
                     preferredSize: const Size.fromHeight(80), 
                     child: Container(
@@ -173,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           hintStyle: TextStyle(color: textTheme.bodyMedium?.color?.withOpacity(0.5)),
                           prefixIcon: Icon(Icons.search_rounded, color: textTheme.bodyMedium?.color),
                           filled: true,
-                          fillColor: theme.scaffoldBackgroundColor, // Warna beda dikit dari header
+                          fillColor: theme.scaffoldBackgroundColor, 
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
                           suffixIcon: IconButton(
                             icon: Icon(Icons.clear, color: textTheme.bodyMedium?.color),
@@ -188,7 +177,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                // --- 2. DAILY INSIGHT (KARTU GRADIENT) ---
+                // --- 2. DAILY INSIGHT ---
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
@@ -227,7 +216,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                // --- 3. LIST JURNAL ---
+                // --- 3. LIST JURNAL (First Line as Title) ---
                 if (provider.isLoading)
                   const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: AppColors.primary)))
                 else if (provider.journals.isEmpty)
@@ -261,7 +250,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         final hasVoice = journal.voiceUrl != null && journal.voiceUrl!.isNotEmpty;
                         final hasMusic = journal.musicLink != null && journal.musicLink!.isNotEmpty;
 
-                        // ANIMASI ITEM MUNCUL (Slide & Fade)
+                        // LOGIK MEMECAH JUDUL & ISI
+                        final lines = journal.content.split('\n');
+                        final titleText = lines.isNotEmpty ? lines[0] : "";
+                        final bodyText = lines.length > 1 ? journal.content.substring(journal.content.indexOf('\n') + 1).trim() : "";
+
                         return AnimationConfiguration.staggeredList(
                           position: index,
                           duration: const Duration(milliseconds: 500),
@@ -286,30 +279,55 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        // TANGGAL
+                                        // Tanggal di Kanan
                                         Align(
                                           alignment: Alignment.centerRight, 
                                           child: Text(_formatDate(journal.date), style: GoogleFonts.plusJakartaSans(fontSize: 12, fontWeight: FontWeight.w500, color: textTheme.bodyMedium?.color?.withOpacity(0.5)))
                                         ),
                                         const SizedBox(height: 8),
 
-                                        // KONTEN + LINE MOOD
+                                        // Isi Konten
                                         Row(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
+                                            // Garis Mood
                                             Container(width: 4, height: 60, decoration: BoxDecoration(color: moodColor, borderRadius: BorderRadius.circular(2))),
                                             const SizedBox(width: 12),
+                                            
+                                            // Teks (Judul + Body)
                                             Expanded(
                                               child: Column(
                                                 crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
+                                                  // JUDUL (BARIS 1 TEBAL)
                                                   Text(
-                                                    journal.content, 
-                                                    maxLines: 3, 
+                                                    titleText, 
+                                                    maxLines: 1, 
                                                     overflow: TextOverflow.ellipsis, 
-                                                    style: GoogleFonts.plusJakartaSans(fontSize: 15, height: 1.5, color: colorScheme.onSurface)
+                                                    style: GoogleFonts.plusJakartaSans(
+                                                      fontSize: 16, 
+                                                      fontWeight: FontWeight.bold, // Bold
+                                                      color: colorScheme.onSurface
+                                                    )
                                                   ),
+                                                  
+                                                  // BODY (SISA BARIS BIASA)
+                                                  if (bodyText.isNotEmpty) ...[
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      bodyText, 
+                                                      maxLines: 2, 
+                                                      overflow: TextOverflow.ellipsis, 
+                                                      style: GoogleFonts.plusJakartaSans(
+                                                        fontSize: 14, 
+                                                        height: 1.4, 
+                                                        color: colorScheme.onSurface.withOpacity(0.7) // Sedikit pudar
+                                                      )
+                                                    ),
+                                                  ],
+
                                                   const SizedBox(height: 12),
+                                                  
                                                   // BADGES
                                                   Row(
                                                     children: [
@@ -323,7 +341,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               ),
                                             ),
                                             
-                                            // HERO IMAGE ANIMATION
+                                            // Thumbnail Gambar (Hero)
                                             if (hasImage) ...[
                                               const SizedBox(width: 12),
                                               Hero(
@@ -368,7 +386,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- HELPER WIDGETS ---
   Widget _buildBadge({required String text, required Color color, required bool isDark, required ThemeData theme}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

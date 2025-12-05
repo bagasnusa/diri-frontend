@@ -56,15 +56,10 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
 
   Future<void> _initRecorder() async {
     _recorder = FlutterSoundRecorder();
-    // Minta izin saat layar dibuka biar siap
     var status = await Permission.microphone.request();
-    if (status != PermissionStatus.granted) {
-      return; // Izin ditolak
-    }
+    if (status != PermissionStatus.granted) return;
     await _recorder!.openRecorder();
-    setState(() {
-      _isRecorderInited = true;
-    });
+    setState(() => _isRecorderInited = true);
   }
 
   @override
@@ -84,30 +79,77 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
     }
   }
 
-  Future<void> _pickImage() async {
-    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+  // --- LOGIKA BARU: PILIH SUMBER GAMBAR (KAMERA/GALERI) ---
+  void _showImageSourcePicker() {
+    final theme = Theme.of(context);
+    final textColor = theme.colorScheme.onSurface;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.cardTheme.color,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("Pilih Foto", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, color: textColor)),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildSourceOption(Icons.camera_alt_rounded, "Kamera", ImageSource.camera, textColor),
+                  _buildSourceOption(Icons.photo_library_rounded, "Galeri", ImageSource.gallery, textColor),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSourceOption(IconData icon, String label, ImageSource source, Color color) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context); // Tutup modal
+        _pickImage(source); // Ambil foto
+      },
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 30),
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: GoogleFonts.plusJakartaSans(color: color)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    final XFile? pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
       setState(() => _selectedImage = File(pickedFile.path));
     }
   }
 
-  // --- LOGIKA REKAM YANG LEBIH STABIL ---
   Future<void> _toggleRecording() async {
-    if (!_isRecorderInited) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Mikrofon belum siap. Coba keluar masuk lagi.")));
-      return;
-    }
+    if (!_isRecorderInited) return;
 
     if (_recorder!.isStopped) {
-      // Mulai Rekam
       final dir = await getTemporaryDirectory();
-      // Pakai format AAC (standar android/ios)
       final path = '${dir.path}/temp_audio.aac'; 
-      
       await _recorder!.startRecorder(toFile: path, codec: Codec.aacADTS);
       setState(() => _isRecording = true);
     } else {
-      // Stop Rekam
       final path = await _recorder!.stopRecorder();
       setState(() {
         _isRecording = false;
@@ -160,7 +202,6 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
   }
 
   void _saveJournal() async {
-    // Validasi minimal ada satu konten
     if (_contentController.text.trim().isEmpty && _selectedImage == null && !_hasVoiceNote) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Isi jurnal kosong.")));
       return;
@@ -169,36 +210,25 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
     setState(() => _isSaving = true);
 
     File? voiceFile;
-    if (_recordedFilePath != null) {
-      voiceFile = File(_recordedFilePath!);
-    }
+    if (_recordedFilePath != null) voiceFile = File(_recordedFilePath!);
 
     try {
       bool success;
-      // Logic Create/Update
       if (widget.existingJournal != null) {
         success = await Provider.of<JournalProvider>(context, listen: false).updateJournal(
-          widget.existingJournal!.id,
-          widget.mood.id, 
-          _contentController.text, 
-          _selectedDate,
-          image: _selectedImage,
-          musicLink: _musicLink,
-          voice: voiceFile 
+          widget.existingJournal!.id, widget.mood.id, _contentController.text, _selectedDate,
+          image: _selectedImage, musicLink: _musicLink, voice: voiceFile 
         );
       } else {
         success = await Provider.of<JournalProvider>(context, listen: false).addJournal(
-          widget.mood.id, 
-          _contentController.text, 
-          _selectedDate,
-          image: _selectedImage,
-          musicLink: _musicLink,
-          voice: voiceFile 
+          widget.mood.id, _contentController.text, _selectedDate,
+          image: _selectedImage, musicLink: _musicLink, voice: voiceFile 
         );
       }
 
       if (success && mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        // --- NAVIGASI FIX: Cukup POP sekali ---
+        Navigator.pop(context); 
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Berhasil disimpan.")));
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Gagal menyimpan ke server.")));
@@ -220,8 +250,6 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
 
     return Scaffold(
       backgroundColor: Color.alphaBlend(moodColor.withOpacity(0.05), theme.scaffoldBackgroundColor),
-      resizeToAvoidBottomInset: true, // PENTING: Biar keyboard ga nutup tombol
-      
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -237,8 +265,7 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
             child: TextButton(
               onPressed: _isSaving ? null : _saveJournal,
               style: TextButton.styleFrom(
-                backgroundColor: moodColor, 
-                foregroundColor: Colors.white,
+                backgroundColor: moodColor, foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               ),
@@ -249,165 +276,66 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
           )
         ],
       ),
-      
       body: Column(
         children: [
-          // BAGIAN SCROLL (KONTEN)
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 1. Date
                   InkWell(
                     onTap: () async {
                       final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _selectedDate,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now(),
-                        builder: (context, child) => Theme(
-                          data: theme.copyWith(
-                            colorScheme: isDark 
-                              ? const ColorScheme.dark(primary: AppColors.primary, surface: AppColors.surface)
-                              : const ColorScheme.light(primary: AppColors.primary, surface: Colors.white),
-                          ),
-                          child: child!,
-                        ),
+                        context: context, initialDate: _selectedDate,
+                        firstDate: DateTime(2020), lastDate: DateTime.now(),
+                        builder: (context, child) => Theme(data: theme.copyWith(colorScheme: isDark ? const ColorScheme.dark(primary: AppColors.primary, surface: AppColors.surface) : const ColorScheme.light(primary: AppColors.primary, surface: Colors.white)), child: child!),
                       );
                       if (picked != null) setState(() => _selectedDate = picked);
                     },
-                    child: Row(
-                      children: [
-                        Text(DateFormat.yMMMMd().format(_selectedDate), style: GoogleFonts.plusJakartaSans(color: subTextColor, fontWeight: FontWeight.bold)),
-                        Icon(Icons.arrow_drop_down, color: subTextColor),
-                      ],
-                    ),
+                    child: Row(children: [Text(DateFormat.yMMMMd().format(_selectedDate), style: GoogleFonts.plusJakartaSans(color: subTextColor, fontWeight: FontWeight.bold)), Icon(Icons.arrow_drop_down, color: subTextColor)]),
                   ),
                   const SizedBox(height: 16),
-
-                  // 2. Mood
-                  Row(
-                    children: [
-                      Container(width: 12, height: 12, decoration: BoxDecoration(color: moodColor, shape: BoxShape.circle)),
-                      const SizedBox(width: 8),
-                      Text("Aku merasa ${widget.mood.name}...", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w600, color: textColor)),
-                    ],
-                  ),
+                  Row(children: [Container(width: 12, height: 12, decoration: BoxDecoration(color: moodColor, shape: BoxShape.circle)), const SizedBox(width: 8), Text("Aku merasa ${widget.mood.name}...", style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w600, color: textColor))]),
                   const SizedBox(height: 24),
 
-                  // 3. Preview Image
-                  if (_selectedImage != null)
-                    _buildMediaPreview(
-                      child: Image.file(_selectedImage!, fit: BoxFit.cover),
-                      onDelete: () => setState(() => _selectedImage = null),
-                    )
-                  else if (widget.existingJournal?.imageUrl != null)
-                     _buildMediaPreview(
-                      child: Image.network(widget.existingJournal!.imageUrl!, fit: BoxFit.cover),
-                      onDelete: null // Gambar lama ga bisa dihapus dulu biar simpel
-                    ),
+                  if (_selectedImage != null) _buildMediaPreview(child: Image.file(_selectedImage!, fit: BoxFit.cover), onDelete: () => setState(() => _selectedImage = null))
+                  else if (widget.existingJournal?.imageUrl != null) _buildMediaPreview(child: Image.network(widget.existingJournal!.imageUrl!, fit: BoxFit.cover), onDelete: null),
 
-                  // 4. Preview Voice Note (INDIKATOR)
                   if (_hasVoiceNote || _isRecording)
                     Container(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: _isRecording ? AppColors.error.withOpacity(0.1) : theme.cardTheme.color,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _isRecording ? AppColors.error : moodColor.withOpacity(0.5)),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.mic_rounded, color: _isRecording ? AppColors.error : AppColors.primary),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Text(
-                              _isRecording ? "Sedang Merekam..." : "Suara Siap Disimpan",
-                              style: TextStyle(
-                                color: _isRecording ? AppColors.error : textColor,
-                                fontWeight: FontWeight.bold
-                              ),
-                            ),
-                          ),
-                          if (!_isRecording)
-                            IconButton(
-                              icon: Icon(Icons.delete_outline_rounded, color: subTextColor),
-                              onPressed: _deleteRecording,
-                            )
-                        ],
-                      ),
+                      margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: _isRecording ? AppColors.error.withOpacity(0.1) : theme.cardTheme.color, borderRadius: BorderRadius.circular(16), border: Border.all(color: _isRecording ? AppColors.error : moodColor.withOpacity(0.5))),
+                      child: Row(children: [Icon(Icons.mic_rounded, color: _isRecording ? AppColors.error : AppColors.primary), const SizedBox(width: 16), Expanded(child: Text(_isRecording ? "Sedang Merekam..." : "Suara Siap Disimpan", style: TextStyle(color: _isRecording ? AppColors.error : textColor, fontWeight: FontWeight.bold))), if (!_isRecording) IconButton(icon: Icon(Icons.delete_outline_rounded, color: subTextColor), onPressed: _deleteRecording)]),
                     ),
 
-                  // 5. Preview Music
                   if (_musicLink != null && _musicLink!.isNotEmpty)
                     Container(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(color: theme.cardTheme.color, borderRadius: BorderRadius.circular(12), border: Border.all(color: moodColor.withOpacity(0.5))),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.music_note, color: AppColors.primary),
-                          const SizedBox(width: 12),
-                          Expanded(child: Text(_musicLink!, style: TextStyle(color: textColor), overflow: TextOverflow.ellipsis)),
-                          IconButton(icon: Icon(Icons.close, color: subTextColor), onPressed: () => setState(() => _musicLink = null)),
-                        ],
-                      ),
+                      child: Row(children: [const Icon(Icons.music_note, color: AppColors.primary), const SizedBox(width: 12), Expanded(child: Text(_musicLink!, style: TextStyle(color: textColor), overflow: TextOverflow.ellipsis)), IconButton(icon: Icon(Icons.close, color: subTextColor), onPressed: () => setState(() => _musicLink = null))]),
                     ),
 
-                  // 6. Text Field
                   TextField(
-                    controller: _contentController,
-                    maxLines: null, 
+                    controller: _contentController, maxLines: null, 
                     style: GoogleFonts.plusJakartaSans(fontSize: 18, height: 1.6, color: textColor),
-                    decoration: InputDecoration(
-                      hintText: "Ceritakan semuanya...",
-                      hintStyle: GoogleFonts.plusJakartaSans(color: subTextColor?.withOpacity(0.5)),
-                      border: InputBorder.none, 
-                    ),
+                    decoration: InputDecoration(hintText: "Ceritakan semuanya...", hintStyle: GoogleFonts.plusJakartaSans(color: subTextColor?.withOpacity(0.5)), border: InputBorder.none),
                   ),
-                  const SizedBox(height: 100), // Spacer biar ga ketutup toolbar
+                  const SizedBox(height: 100),
                 ],
               ),
             ),
           ),
-
-          // BAGIAN TETAP (TOOLBAR)
           Container(
-            padding: const EdgeInsets.all(16), // Padding aman
-            decoration: BoxDecoration(
-              color: theme.cardTheme.color,
-              border: Border(top: BorderSide(color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade200)),
-              boxShadow: [
-                if (!isDark) BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0, -2))
-              ],
-            ),
-            child: SafeArea( // PENTING: Biar ga kena tombol home iPhone/Android Gesture
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: theme.cardTheme.color, border: Border(top: BorderSide(color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade200))),
+            child: SafeArea(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildToolbarButton(Icons.image_rounded, "Foto", _pickImage, active: _selectedImage != null),
+                  _buildToolbarButton(Icons.image_rounded, "Foto", _showImageSourcePicker, active: _selectedImage != null), // <-- PANGGIL FUNGSI PICKER BARU
                   _buildToolbarButton(Icons.music_note_rounded, "Musik", _addMusicLink, active: _musicLink != null),
-                  
-                  // Tombol Mic Special
-                  InkWell(
-                    onTap: _toggleRecording,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _isRecording ? AppColors.error : (_hasVoiceNote ? AppColors.primary : theme.scaffoldBackgroundColor),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: isDark ? Colors.white24 : Colors.grey.shade300),
-                      ),
-                      child: Icon(
-                        _isRecording ? Icons.stop_rounded : Icons.mic_rounded,
-                        color: (_isRecording || _hasVoiceNote) ? Colors.white : subTextColor,
-                        size: 24,
-                      ),
-                    ),
-                  ),
+                  InkWell(onTap: _toggleRecording, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: _isRecording ? AppColors.error : (_hasVoiceNote ? AppColors.primary : theme.scaffoldBackgroundColor), shape: BoxShape.circle, border: Border.all(color: isDark ? Colors.white24 : Colors.grey.shade300)), child: Icon(_isRecording ? Icons.stop_rounded : Icons.mic_rounded, color: (_isRecording || _hasVoiceNote) ? Colors.white : subTextColor, size: 24))),
                 ],
               ),
             ),
@@ -417,37 +345,6 @@ class _JournalEditorScreenState extends State<JournalEditorScreen> {
     );
   }
 
-  Widget _buildMediaPreview({required Widget child, VoidCallback? onDelete}) {
-    return Stack(
-      children: [
-        Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          height: 200, width: double.infinity,
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)),
-          child: ClipRRect(borderRadius: BorderRadius.circular(16), child: child),
-        ),
-        if (onDelete != null)
-          Positioned(top: 8, right: 8, child: GestureDetector(onTap: onDelete, child: Container(padding: const EdgeInsets.all(4), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, color: Colors.white, size: 20)))),
-      ],
-    );
+  Widget _buildMediaPreview({required Widget child, VoidCallback? onDelete}) { /* ... Copy dari sebelumnya (sama) ... */ return Stack(children: [Container(margin: const EdgeInsets.only(bottom: 16), height: 200, width: double.infinity, decoration: BoxDecoration(borderRadius: BorderRadius.circular(16)), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: child)), if (onDelete != null) Positioned(top: 8, right: 8, child: GestureDetector(onTap: onDelete, child: Container(padding: const EdgeInsets.all(4), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, color: Colors.white, size: 20))))]); }
+  Widget _buildToolbarButton(IconData icon, String label, VoidCallback onTap, {bool active = false}) { /* ... Copy dari sebelumnya (sama) ... */ final color = active ? AppColors.primary : Theme.of(context).textTheme.bodyMedium?.color; return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(12), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, color: color, size: 24), const SizedBox(height: 4), Text(label, style: TextStyle(fontSize: 10, color: color))])));}
   }
-
-  Widget _buildToolbarButton(IconData icon, String label, VoidCallback onTap, {bool active = false}) {
-    final color = active ? AppColors.primary : Theme.of(context).textTheme.bodyMedium?.color;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 10, color: color)),
-          ],
-        ),
-      ),
-    );
-  }
-}

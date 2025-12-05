@@ -9,9 +9,8 @@ import '../providers/journal_provider.dart';
 import 'journal_editor_screen.dart';
 
 class JournalDetailScreen extends StatelessWidget {
-  final Journal journal;
-
-  const JournalDetailScreen({super.key, required this.journal});
+  final int journalId; 
+  JournalDetailScreen({super.key, required Journal journal}) : journalId = journal.id;
 
   Color _parseColor(String hexCode) {
     try {
@@ -24,7 +23,7 @@ class JournalDetailScreen extends StatelessWidget {
   String _formatDate(String dateString) {
     try {
       final DateTime date = DateTime.parse(dateString);
-      return DateFormat.yMMMMEEEEd().format(date); 
+      return DateFormat('EEEE, d MMMM yyyy').format(date); 
     } catch (e) {
       return dateString;
     }
@@ -58,7 +57,7 @@ class JournalDetailScreen extends StatelessWidget {
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx); 
-              final success = await Provider.of<JournalProvider>(context, listen: false).deleteJournal(journal.id);
+              final success = await Provider.of<JournalProvider>(context, listen: false).deleteJournal(journalId);
               if (success && context.mounted) {
                 Navigator.pop(context); 
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Jurnal berhasil dihapus.")));
@@ -73,146 +72,183 @@ class JournalDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final moodColor = _parseColor(journal.mood.colorCode);
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final textColor = theme.colorScheme.onSurface;
-    final subTextColor = theme.textTheme.bodyMedium?.color;
-    final backgroundColor = theme.scaffoldBackgroundColor;
+    // --- MAGIS DISINI: DENGARKAN PERUBAHAN PROVIDER ---
+    return Consumer<JournalProvider>(
+      builder: (context, provider, child) {
+        // Cari data terbaru dari list provider berdasarkan ID
+        // Gunakan firstWhere untuk mencari.
+        // Jika tidak ketemu (misal baru dihapus), kembalikan jurnal kosong/null (tapi harusnya aman karena kalau dihapus kita pop).
+        Journal? journal;
+        try {
+          journal = provider.journals.firstWhere((j) => j.id == journalId);
+        } catch (e) {
+          // Kasus langka: Jurnal tidak ditemukan di list (mungkin error sync), kita pop aja
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
 
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          // HEADER GAMBAR
-          SliverAppBar(
-            expandedHeight: journal.imageUrl != null ? 350 : 100,
-            pinned: true,
-            backgroundColor: backgroundColor,
-            leading: Container(
-              margin: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: backgroundColor.withOpacity(0.5), shape: BoxShape.circle),
-              child: IconButton(icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor, size: 20), onPressed: () => Navigator.pop(context)),
-            ),
-            actions: [
-              Container(
-                margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: backgroundColor.withOpacity(0.5), shape: BoxShape.circle),
-                child: PopupMenuButton<String>(
-                  icon: Icon(Icons.more_vert_rounded, color: textColor),
-                  color: theme.cardTheme.color,
-                  onSelected: (value) {
-                    if (value == 'edit') {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => JournalEditorScreen(mood: journal.mood, existingJournal: journal)));
-                    } else if (value == 'delete') {
-                      _confirmDelete(context);
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    PopupMenuItem(value: 'edit', child: Text("Edit Tulisan", style: TextStyle(color: textColor))),
-                    PopupMenuItem(value: 'delete', child: Text("Hapus Kenangan", style: TextStyle(color: AppColors.error))),
-                  ],
+        // Mulai render UI dengan data 'journal' yang FRESH
+        final moodColor = _parseColor(journal.mood.colorCode);
+        final theme = Theme.of(context);
+        final isDark = theme.brightness == Brightness.dark;
+        final textColor = theme.colorScheme.onSurface;
+        final subTextColor = theme.textTheme.bodyMedium?.color;
+        final backgroundColor = theme.scaffoldBackgroundColor;
+
+        // Logic pecah judul
+        final lines = journal.content.split('\n');
+        final titleText = lines.isNotEmpty ? lines[0] : "";
+        final bodyText = lines.length > 1 ? journal.content.substring(journal.content.indexOf('\n') + 1).trim() : "";
+
+        return Scaffold(
+          backgroundColor: backgroundColor,
+          body: CustomScrollView(
+            slivers: [
+              // HEADER GAMBAR
+              SliverAppBar(
+                expandedHeight: journal.imageUrl != null ? 350 : 100,
+                pinned: true,
+                backgroundColor: backgroundColor,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: backgroundColor.withOpacity(0.5), shape: BoxShape.circle),
+                  child: IconButton(icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor, size: 20), onPressed: () => Navigator.pop(context)),
+                ),
+                actions: [
+                  Container(
+                    margin: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: backgroundColor.withOpacity(0.5), shape: BoxShape.circle),
+                    child: PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert_rounded, color: textColor),
+                      color: theme.cardTheme.color,
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          Navigator.push(context, MaterialPageRoute(builder: (context) => JournalEditorScreen(mood: journal!.mood, existingJournal: journal)));
+                        } else if (value == 'delete') {
+                          _confirmDelete(context);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(value: 'edit', child: Text("Edit Tulisan", style: TextStyle(color: textColor))),
+                        PopupMenuItem(value: 'delete', child: Text("Hapus Kenangan", style: TextStyle(color: AppColors.error))),
+                      ],
+                    ),
+                  ),
+                ],
+                flexibleSpace: FlexibleSpaceBar(
+                  background: journal.imageUrl != null
+                      ? Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Hero(
+                              tag: 'journal-img-${journal.id}',
+                              child: Image.network(
+                                journal.imageUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => Container(color: moodColor.withOpacity(0.2)),
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 0, left: 0, right: 0, height: 100,
+                              child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, backgroundColor]))),
+                            ),
+                          ],
+                        )
+                      : Container(color: moodColor.withOpacity(0.1)),
                 ),
               ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: journal.imageUrl != null
-                  ? Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // --- HERO ANIMATION DISINI ---
-                        Hero(
-                          tag: 'journal-img-${journal.id}', // TAG HARUS SAMA PERSIS DENGAN DI HOME
-                          child: Image.network(
-                            journal.imageUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(color: moodColor.withOpacity(0.2)),
+
+              // ISI KONTEN
+              SliverToBoxAdapter(
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(color: backgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Mood & Tanggal
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(color: moodColor.withOpacity(0.1), borderRadius: BorderRadius.circular(30), border: Border.all(color: moodColor.withOpacity(0.3))),
+                            child: Row(
+                              children: [
+                                Container(width: 8, height: 8, decoration: BoxDecoration(color: moodColor, shape: BoxShape.circle)),
+                                const SizedBox(width: 8),
+                                Text(journal.mood.name, style: TextStyle(fontWeight: FontWeight.bold, color: moodColor)),
+                              ],
+                            ),
+                          ),
+                          Text(_formatDate(journal.date), style: GoogleFonts.plusJakartaSans(color: subTextColor, fontWeight: FontWeight.w500)),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // LINK MUSIK
+                      if (journal.musicLink != null && journal.musicLink!.isNotEmpty)
+                        InkWell(
+                          onTap: () => _launchURL(context, journal!.musicLink!), 
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 24),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: theme.cardTheme.color, borderRadius: BorderRadius.circular(16), border: Border.all(color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade200)),
+                            child: Row(
+                              children: [
+                                Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF1DB954).withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.play_arrow_rounded, color: Color(0xFF1DB954))),
+                                const SizedBox(width: 16),
+                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Soundtrack Kenangan", style: GoogleFonts.plusJakartaSans(fontSize: 10, color: subTextColor)), Text(journal.musicLink!, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, color: AppColors.primary, decoration: TextDecoration.underline))])),
+                                const Icon(Icons.open_in_new_rounded, size: 16, color: AppColors.primary),
+                              ],
+                            ),
                           ),
                         ),
-                        // Gradient Fade
-                        Positioned(
-                          bottom: 0, left: 0, right: 0, height: 100,
-                          child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, backgroundColor]))),
-                        ),
-                      ],
-                    )
-                  : Container(color: moodColor.withOpacity(0.1)),
-            ),
-          ),
 
-          // ISI KONTEN
-          SliverToBoxAdapter(
-            child: Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(color: backgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(color: moodColor.withOpacity(0.1), borderRadius: BorderRadius.circular(30), border: Border.all(color: moodColor.withOpacity(0.3))),
-                        child: Row(
-                          children: [
-                            Container(width: 8, height: 8, decoration: BoxDecoration(color: moodColor, shape: BoxShape.circle)),
-                            const SizedBox(width: 8),
-                            Text(journal.mood.name, style: TextStyle(fontWeight: FontWeight.bold, color: moodColor)),
-                          ],
+                      // PLAYER SUARA
+                      if (journal.voiceUrl != null)
+                        InkWell(
+                          onTap: () => _launchURL(context, journal!.voiceUrl!), 
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 24),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(color: theme.cardTheme.color, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.primary.withOpacity(0.3))),
+                            child: Row(
+                              children: [
+                                CircleAvatar(backgroundColor: AppColors.primary, child: const Icon(Icons.play_arrow_rounded, color: Colors.white)),
+                                const SizedBox(width: 16),
+                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Rekaman Suara", style: TextStyle(color: textColor, fontWeight: FontWeight.bold)), Text("Klik untuk memutar", style: TextStyle(color: subTextColor, fontSize: 12))])),
+                                Icon(Icons.audiotrack_rounded, color: AppColors.primary, size: 24),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                      Text(_formatDate(journal.date), style: GoogleFonts.plusJakartaSans(color: subTextColor, fontWeight: FontWeight.w500)),
+
+                      // --- JUDUL (BARIS 1) ---
+                      if (titleText.isNotEmpty) ...[
+                        Text(
+                          titleText, 
+                          style: GoogleFonts.plusJakartaSans(fontSize: 22, fontWeight: FontWeight.bold, height: 1.3, color: textColor)
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // --- ISI (SISA BARIS) ---
+                      if (bodyText.isNotEmpty)
+                        Text(
+                          bodyText,
+                          style: GoogleFonts.plusJakartaSans(fontSize: 16, height: 1.8, color: textColor.withOpacity(0.9)),
+                        ),
+                      
+                      const SizedBox(height: 100), 
                     ],
                   ),
-                  const SizedBox(height: 24),
-
-                  if (journal.musicLink != null && journal.musicLink!.isNotEmpty)
-                    InkWell(
-                      onTap: () => _launchURL(context, journal.musicLink!), 
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 24),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(color: theme.cardTheme.color, borderRadius: BorderRadius.circular(16), border: Border.all(color: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade200)),
-                        child: Row(
-                          children: [
-                            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: const Color(0xFF1DB954).withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.play_arrow_rounded, color: Color(0xFF1DB954))),
-                            const SizedBox(width: 16),
-                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Soundtrack Kenangan", style: GoogleFonts.plusJakartaSans(fontSize: 10, color: subTextColor)), Text(journal.musicLink!, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold, color: AppColors.primary, decoration: TextDecoration.underline))])),
-                            const Icon(Icons.open_in_new_rounded, size: 16, color: AppColors.primary),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  if (journal.voiceUrl != null)
-                    InkWell(
-                      onTap: () => _launchURL(context, journal.voiceUrl!), 
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 24),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(color: theme.cardTheme.color, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.primary.withOpacity(0.3))),
-                        child: Row(
-                          children: [
-                            CircleAvatar(backgroundColor: AppColors.primary, child: const Icon(Icons.play_arrow_rounded, color: Colors.white)),
-                            const SizedBox(width: 16),
-                            Text("Rekaman Suara", style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
-                            const Spacer(),
-                            IconButton(icon: Icon(Icons.open_in_new, color: subTextColor), onPressed: () => _launchURL(context, journal.voiceUrl!)),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  Text(journal.content, style: GoogleFonts.plusJakartaSans(fontSize: 16, height: 1.8, color: textColor)),
-                  const SizedBox(height: 100), 
-                ],
-              ),
-            ),
-          )
-        ],
-      ),
+                ),
+              )
+            ],
+          ),
+        );
+      },
     );
   }
 }
